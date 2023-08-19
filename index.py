@@ -1,10 +1,17 @@
 from pytube import YouTube
 from sys import argv
-from tqdm import tqdm
+from rich.progress import Progress
+from rich.console import Console
 
-class TqdmUpTo(tqdm):
-    def update_to(self, stream, chunk, bytes_remaining):
-        self.update(len(chunk))  # update the size of the chunk downloaded
+console = Console()
+progress = Progress(console=console)
+
+# Create a task outside of the callback to avoid creating it multiple times.
+task = progress.add_task("[cyan]Downloading...", total=0)  # Initialize with total=0, we'll update it later.
+
+def rich_progress_callback(stream, chunk, bytes_remaining):
+    # Update the progress
+    progress.update(task, advance=len(chunk))
 
 def main():
     link = argv[1]
@@ -17,8 +24,12 @@ def main():
     yd = yt.streams.get_highest_resolution()
     file_size = yd.filesize
 
-    with TqdmUpTo(total=file_size, unit='B', unit_scale=True, desc="Download In Progress", ascii=True) as t:
-        yt.register_on_progress_callback(t.update_to)
+    # Update the total filesize of the task now that we have it.
+    progress.update(task, total=file_size)
+
+    # Register the callback and start the download.
+    yt.register_on_progress_callback(rich_progress_callback)
+    with progress:
         yd.download('/Users/Peter/downloadedVideos')
 
     print("Download completed!!")
