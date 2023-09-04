@@ -61,11 +61,18 @@ def main():
                 if f"{stream.abr} - {stream.mime_type}" == chosen:
                     yd = stream
                     break
-            isItABeat = questionary.confirm(
-                "Is this a beat?"
+            isVocalOrBeat = questionary.confirm(
+                "Is this for a song?"
             ).ask()
-            if isItABeat:
-                download_path = '/Users/Peter/Documents/raps/rippedBeats'
+            if isVocalOrBeat:
+                isItVocalsOrInstrumental = questionary.select(
+                    "Is it vocals or instrumental?",
+                    choices=['Vocals', 'Instrumental'],
+                ).ask()
+                if isItVocalsOrInstrumental == 'Vocals':
+                    download_path = '/Users/Peter/Documents/raps/rippedVocals'
+                else:
+                    download_path = '/Users/Peter/Documents/raps/rippedBeats'
             else:
                 download_path = '/Users/Peter/ytDownloads/downloadedAudios'
 
