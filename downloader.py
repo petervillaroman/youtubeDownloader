@@ -1,103 +1,86 @@
-import pytube
-from pytube import YouTube
-from pytube.exceptions import VideoUnavailable
-from rich.progress import Progress
-from rich.console import Console
+import yt_dlp
 import questionary
 import subprocess
+from rich.progress import Progress
+from rich.console import Console
+import os
 
 console = Console()
 progress = Progress(console=console)
 
-# Create a task outside the callback to avoid creating it multiple times.
-task = progress.add_task("[cyan]Downloading...", total=0)
+# Create a task for progress tracking
+task = None
 
 
-def rich_progress_callback(stream, chunk, bytes_remaining):
-    progress.update(task, advance=len(chunk))
+def rich_progress_hook(d):
+    """Hook for yt-dlp to update progress bar"""
+    global task
+    if task is None:
+        task = progress.add_task("[cyan]Downloading...", total=0)
+    if d['status'] == 'downloading':
+        # Update total size once available
+        if d.get('total_bytes') and progress.tasks[task].total == 0:
+            progress.update(task, total=d['total_bytes'])
+        # Update progress
+        progress.update(
+            task, advance=d['downloaded_bytes'] - progress.tasks[task].completed)
+    elif d['status'] == 'finished':
+        progress.update(task, completed=progress.tasks[task].total)
+        console.print("[green]Download completed![/green]")
 
 
 def open_directory(directory):
-    """Open the given directory in the default file explorer (e.g., Finder on macOS)"""
-    subprocess.run(["open", directory])
+    """Open the given directory in the default file explorer (e.g., Finder on macOS or Explorer on Windows)"""
+    if os.name == 'posix':  # macOS or Linux
+        subprocess.run(["open", directory])
+    elif os.name == 'nt':   # Windows
+        subprocess.run(["explorer", directory])
 
 
 def main():
     link = input("Enter the link of YouTube video you want to download:  ")
+
+    # Set the download directory to ~/ytDownloads/
+    download_dir = os.path.expanduser('~/ytDownloads/')
+    os.makedirs(download_dir, exist_ok=True)
+
     try:
-        yt = YouTube(link)
+        # Prompt for download type: Video or Audio
         download_type = questionary.select(
             "Do you want to download the video or just the audio?",
             choices=['Video', 'Audio'],
         ).ask()
 
-        download_path = ''
+        ydl_opts = {
+            'progress_hooks': [rich_progress_hook],
+            # Save to the specified directory
+            'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+            'quiet': True
+        }
 
-        if download_type == "Video":
-            print("Title: ", yt.title)
-            print("Number of views: ", yt.views)
-            print("Length of video: ", yt.length, "seconds")
-            print("Downloading video...")
-            yd = yt.streams.filter(progressive=True, file_extension='mp4').order_by(
-                'resolution').desc().first()
-            download_path = '/Users/Peter/ytDownloads/downloadedVideos'
+        # Adjust options based on the user's choice
+        if download_type == 'Audio':
+            ydl_opts.update({
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+            })
         else:
-            print("Title: ", yt.title)
-            print("Number of views: ", yt.views)
-            print("Length of video: ", yt.length, "seconds")
+            ydl_opts.update({'format': 'best'})
 
-            # List all available audio streams
-            audio_streams = yt.streams.filter(only_audio=True).all()
-            choices = []
-            for stream in audio_streams:
-                choices.append(f"{stream.abr} - {stream.mime_type}")
-
-            chosen = questionary.select(
-                "Choose an audio format to download:",
-                choices=choices,
-            ).ask()
-
-            # Match the user's choice with the correct stream
-            for stream in audio_streams:
-                if f"{stream.abr} - {stream.mime_type}" == chosen:
-                    yd = stream
-                    break
-            isVocalOrBeat = questionary.confirm(
-                "Is this for a song?"
-            ).ask()
-            if isVocalOrBeat:
-                isItVocalsOrInstrumental = questionary.select(
-                    "Is it vocals or instrumental?",
-                    choices=['Vocals', 'Instrumental'],
-                ).ask()
-                if isItVocalsOrInstrumental == 'Vocals':
-                    download_path = '/Users/Peter/Documents/raps/rippedVocals'
-                else:
-                    download_path = '/Users/Peter/Documents/raps/rippedBeats'
-            else:
-                download_path = '/Users/Peter/ytDownloads/downloadedAudios'
-
-        file_size = yd.filesize
-        progress.update(task, total=file_size)
-        yt.register_on_progress_callback(rich_progress_callback)
         with progress:
-            yd.download(download_path)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([link])
 
-        console.print(f"[green]Download completed![/green]")
+        # After download, open the directory where the file was saved
+        open_directory(download_dir)
 
-        # Ask the user if they'd like to open the folder containing the download.
-        open_folder = questionary.confirm(
-            "Would you like to open the folder containing the download?"
-        ).ask()
-
-        if open_folder:
-            open_directory(download_path)
-
-    except pytube.exceptions.VideoUnavailable:
-        print(f"The video with the link {link} is unavailable.")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        console.print(f"[red]An error occurred: {e}[/red]")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
