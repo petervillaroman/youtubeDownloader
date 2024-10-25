@@ -38,7 +38,8 @@ def main():
             print("Number of views: ", yt.views)
             print("Length of video: ", yt.length, "seconds")
             print("Downloading video...")
-            yd = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+            yd = yt.streams.filter(progressive=True, file_extension='mp4').order_by(
+                'resolution').desc().first()
             download_path = '/Users/Peter/ytDownloads/downloadedVideos'
         else:
             print("Title: ", yt.title)
